@@ -191,9 +191,13 @@ export class IOSService {
       const buildProcess = exec(command, { maxBuffer: 10 * 1024 * 1024 });
 
       let lastOutput = '';
+      let fullOutput = '';
+      let errorOutput = '';
 
       buildProcess.stdout?.on('data', (data) => {
         const output = data.toString();
+        fullOutput += output;
+
         // Extract meaningful build progress
         const lines = output.split('\n');
         for (const line of lines) {
@@ -206,8 +210,10 @@ export class IOSService {
       });
 
       buildProcess.stderr?.on('data', (data) => {
-        // Some warnings go to stderr but aren't fatal
         const output = data.toString();
+        errorOutput += output;
+
+        // Some warnings go to stderr but aren't fatal
         if (!output.includes('warning:')) {
           console.error(output);
         }
@@ -223,7 +229,9 @@ export class IOSService {
             reject(error);
           }
         } else {
-          reject(new Error(`Build failed with exit code ${code}`));
+          // Extract error details from build output
+          const errorDetails = this.extractBuildErrors(fullOutput, errorOutput);
+          reject(new Error(`Build failed with exit code ${code}\n\n${errorDetails}`));
         }
       });
 
@@ -231,6 +239,63 @@ export class IOSService {
         reject(new Error(`Build process error: ${error.message}`));
       });
     });
+  }
+
+  private extractBuildErrors(stdout: string, stderr: string): string {
+    const lines = (stdout + '\n' + stderr).split('\n');
+    const errors: string[] = [];
+    const warnings: string[] = [];
+    let failureSection = '';
+    let inFailureSection = false;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+
+      // Capture error lines
+      if (line.includes('error:') && !line.includes('warning:')) {
+        // Get context around the error (previous line and next 2 lines)
+        const contextStart = Math.max(0, i - 1);
+        const contextEnd = Math.min(lines.length, i + 3);
+        const errorContext = lines.slice(contextStart, contextEnd).join('\n');
+        errors.push(errorContext);
+      }
+
+      // Capture the BUILD FAILED section
+      if (line.includes('** BUILD FAILED **')) {
+        inFailureSection = true;
+      }
+
+      if (inFailureSection) {
+        failureSection += line + '\n';
+        // Get the next 20 lines after BUILD FAILED to capture the summary
+        if (failureSection.split('\n').length > 25) {
+          inFailureSection = false;
+        }
+      }
+    }
+
+    let result = '';
+
+    if (errors.length > 0) {
+      result += '📋 Compilation Errors:\n\n';
+      // Show up to 5 distinct errors to avoid overwhelming output
+      const distinctErrors = [...new Set(errors)].slice(0, 5);
+      result += distinctErrors.join('\n---\n') + '\n\n';
+
+      if (errors.length > 5) {
+        result += `... and ${errors.length - 5} more error(s)\n\n`;
+      }
+    }
+
+    if (failureSection) {
+      result += failureSection;
+    }
+
+    if (!result) {
+      result = 'Build failed but no specific errors were captured. The build output may contain more details.';
+    }
+
+    return result;
   }
 
   private async installAndLaunchApp(
