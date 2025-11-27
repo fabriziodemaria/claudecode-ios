@@ -19,6 +19,18 @@ export class GitHubService {
     }
   }
 
+  async getRepository(owner: string, repo: string) {
+    try {
+      const { data } = await this.octokit.repos.get({
+        owner,
+        repo,
+      });
+      return data;
+    } catch (error) {
+      throw new Error(`Failed to fetch repository: ${error instanceof Error ? error.message : error}`);
+    }
+  }
+
   async getPullRequests(owner: string, repo: string) {
     try {
       const { data } = await this.octokit.pulls.list({
