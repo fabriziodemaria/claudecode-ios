@@ -1,0 +1,31 @@
+{
+  "name": "ios-pr-runner",
+  "version": "1.0.0",
+  "description": "CLI tool to checkout GitHub PRs and run iOS apps on simulators or devices",
+  "main": "dist/index.js",
+  "bin": {
+    "ios-pr-runner": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts"
+  },
+  "keywords": ["ios", "github", "cli", "xcode", "simulator"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@octokit/rest": "^20.0.2",
+    "commander": "^11.1.0",
+    "inquirer": "^9.2.12",
+    "chalk": "^4.1.2",
+    "ora": "^5.4.1",
+    "simple-git": "^3.22.0"
+  },
+  "devDependencies": {
+    "@types/inquirer": "^9.0.7",
+    "@types/node": "^20.11.5",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}
