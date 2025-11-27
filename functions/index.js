@@ -24,17 +24,22 @@ exports.onPurchaseCreated = functions.firestore
       console.log('New purchase detected:', purchaseId);
       console.log('Purchase data:', purchaseData);
 
-      // Extract purchase details
+      // Extract purchase details (supports both StoreKit and Analytics tracking)
       const {
-        productId,
+        productId,           // From StoreKit tracking
+        productName,         // From Analytics tracking
         transactionId,
         purchaseType,
         price,
+        totalValue,          // From Analytics tracking
+        quantity,            // From Analytics tracking
         currencyCode,
         displayPrice,
         appIdentifier,
+        appDisplayName,      // Human-readable app name
         environment,
-        isBackfill
+        isBackfill,
+        source               // 'analytics' or 'storekit'
       } = purchaseData;
 
       // Skip backfilled transactions to avoid notification spam on first launch
@@ -44,14 +49,16 @@ exports.onPurchaseCreated = functions.firestore
       }
 
       // Format the notification message
-      const amount = displayPrice || (price ? `${currencyCode} ${price}` : 'Unknown amount');
-      const appName = appIdentifier || 'Unknown app';
+      const amount = displayPrice || (totalValue ? `${currencyCode} ${totalValue.toFixed(2)}` : (price ? `${currencyCode} ${price}` : 'Unknown amount'));
+      const appName = appDisplayName || appIdentifier || 'Unknown app';
+      const product = productName || productId || 'Unknown product';
       const type = purchaseType === 'subscription' ? '🔄 Subscription' : '💰 Purchase';
+      const qty = quantity > 1 ? ` (x${quantity})` : '';
 
       // Create notification payload
       const notification = {
         title: `${type} - ${amount}`,
-        body: `New ${purchaseType} in ${appName}\nProduct: ${productId}\nEnv: ${environment}`,
+        body: `${product}${qty}\nApp: ${appName}\nEnv: ${environment || 'unknown'}`,
       };
 
       const payload = {
