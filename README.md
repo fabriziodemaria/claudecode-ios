@@ -1,11 +1,13 @@
 # iOS PR Runner
 
-A command-line tool that allows you to:
-- Connect to GitHub
-- Select a repository
-- Select a pull request
-- Compile an iOS app
-- Run it on a simulator or real device of your choice
+A powerful command-line tool that streamlines iOS PR testing and development:
+
+- **Connect to GitHub** - Authenticate and access your repositories
+- **Browse and select PRs** - Interactive selection or view latest PRs by timestamp
+- **Monitor repositories** - Watch for new PRs in real-time with the watch mode
+- **Compile iOS apps** - Build projects using xcodebuild
+- **Run on any target** - Choose simulators or physical devices
+- **Quick iterations** - Refresh PR lists and build immediately
 
 ## Prerequisites
 
@@ -53,7 +55,11 @@ Before using this tool, ensure you have the following installed:
 
 ## Usage
 
-### Run the CLI
+The CLI provides three main commands:
+
+### 1. `run` - Interactive full workflow
+
+Select a repository and PR interactively, then build and run.
 
 If you linked globally:
 ```bash
@@ -70,7 +76,7 @@ Or during development:
 npm run dev run
 ```
 
-### Workflow
+#### Workflow
 
 The CLI will guide you through an interactive workflow:
 
@@ -109,7 +115,7 @@ The CLI will guide you through an interactive workflow:
    - Installs the app on the selected destination
    - Launches the app automatically
 
-## Example Session
+#### Example Session
 
 ```
 🔐 GitHub Authentication
@@ -124,7 +130,7 @@ The CLI will guide you through an interactive workflow:
 🔀 Pull Request Selection
 
 ✔ Fetching pull requests...
-? Select a pull request: #42: Add new feature (by johndoe)
+? Select a pull request: #42: Add new feature (by johndoe) - Updated 2h ago
 
 📥 Checking out PR
 
@@ -146,6 +152,98 @@ The CLI will guide you through an interactive workflow:
 
 ✔ Building project...
 ✓ App built and launched successfully!
+```
+
+### 2. `latest` - View and build latest PRs
+
+Quickly view the most recently updated PRs for a repository, with the option to refresh the list or build a PR immediately. Perfect for monitoring active development!
+
+```bash
+# Interactive repository selection
+ios-pr-runner latest
+
+# Specify repository directly
+ios-pr-runner latest -r owner/repo
+
+# Show top 5 PRs (default is 10)
+ios-pr-runner latest -r owner/repo -n 5
+```
+
+#### Features:
+- Shows PRs sorted by most recently updated
+- Displays relative timestamps (e.g., "Updated 2h ago", "Updated 3d ago")
+- Refresh option to check for updates
+- Quick build option to immediately build a selected PR
+
+#### Example Session
+
+```
+🔐 GitHub Authentication
+? Enter your GitHub Personal Access Token: **********************
+
+⏱️  Latest PRs for myorg/awesome-ios-app
+
+Showing 10 most recently updated PR(s):
+
+1. #45: Fix crash on startup (by alice) - Updated just now
+2. #44: Improve performance (by bob) - Updated 3h ago
+3. #43: Update dependencies (by charlie) - Updated 5h ago
+4. #42: Add new feature (by johndoe) - Updated 1d ago
+5. #41: Refactor code (by jane) - Updated 2d ago
+
+? What would you like to do?
+  🚀 Build and run a PR
+  🔄 Refresh list
+  ❌ Exit
+```
+
+### 3. `watch` - Monitor repository for new PRs
+
+Continuously monitor a repository and get notified when new PRs are opened. Great for CI/CD workflows or staying on top of team activity!
+
+```bash
+# Watch a repository (checks every 60 seconds by default)
+ios-pr-runner watch -r owner/repo
+
+# Custom check interval (in seconds)
+ios-pr-runner watch -r owner/repo -i 30
+```
+
+#### Features:
+- Real-time monitoring for new PRs
+- Notifications when PRs are opened
+- Tracks when PRs are closed or merged
+- Option to immediately build new PRs
+- Graceful shutdown with Ctrl+C
+
+#### Example Session
+
+```
+🔐 GitHub Authentication
+? Enter your GitHub Personal Access Token: **********************
+
+✓ Connected to myorg/awesome-ios-app
+
+👀 Watching for new PRs (checking every 60s)
+
+Press Ctrl+C to stop watching
+
+[10:30:45 AM] Currently tracking 12 open PR(s)
+[10:31:45 AM] No new PRs. Still watching...
+[10:32:45 AM] No new PRs. Still watching...
+
+🎉 1 new PR(s) detected!
+
+NEW: #46: Add dark mode (by sarah) - Updated just now
+
+? Would you like to build one of these PRs now? Yes
+? Select a PR to build: #46: Add dark mode (by sarah) - Updated just now
+
+[Builds and runs the PR...]
+
+👀 Resuming watch...
+
+[10:34:00 AM] No new PRs. Still watching...
 ```
 
 ## Troubleshooting
