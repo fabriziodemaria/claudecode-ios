@@ -7,8 +7,83 @@ import ora from 'ora';
 import { GitHubService } from './services/github';
 import { IOSService } from './services/ios';
 import { GitService } from './services/git';
+import { ConfigService } from './services/config';
 
 const program = new Command();
+const configService = new ConfigService();
+
+// Helper function to authenticate with GitHub
+async function authenticateGitHub(): Promise<GitHubService> {
+  console.log(chalk.blue('\n🔐 GitHub Authentication\n'));
+
+  const savedToken = configService.getGitHubToken();
+  let githubToken: string;
+
+  if (savedToken) {
+    const { useSavedToken } = await inquirer.prompt([
+      {
+        type: 'confirm',
+        name: 'useSavedToken',
+        message: 'Use saved GitHub token?',
+        default: true,
+      },
+    ]);
+
+    if (useSavedToken) {
+      githubToken = savedToken;
+    } else {
+      const result = await inquirer.prompt([
+        {
+          type: 'password',
+          name: 'githubToken',
+          message: 'Enter your GitHub Personal Access Token:',
+          validate: (input) => input.length > 0 || 'Token is required',
+        },
+      ]);
+      githubToken = result.githubToken;
+
+      const { saveToken } = await inquirer.prompt([
+        {
+          type: 'confirm',
+          name: 'saveToken',
+          message: 'Save this token for future use?',
+          default: true,
+        },
+      ]);
+
+      if (saveToken) {
+        configService.saveGitHubToken(githubToken);
+        console.log(chalk.green('✓ Token saved successfully'));
+      }
+    }
+  } else {
+    const result = await inquirer.prompt([
+      {
+        type: 'password',
+        name: 'githubToken',
+        message: 'Enter your GitHub Personal Access Token:',
+        validate: (input) => input.length > 0 || 'Token is required',
+      },
+    ]);
+    githubToken = result.githubToken;
+
+    const { saveToken } = await inquirer.prompt([
+      {
+        type: 'confirm',
+        name: 'saveToken',
+        message: 'Save this token for future use?',
+        default: true,
+      },
+    ]);
+
+    if (saveToken) {
+      configService.saveGitHubToken(githubToken);
+      console.log(chalk.green('✓ Token saved successfully'));
+    }
+  }
+
+  return new GitHubService(githubToken);
+}
 
 // Helper function to format PR display with timestamps
 function formatPRDisplay(pr: any): string {
@@ -28,6 +103,78 @@ function formatPRDisplay(pr: any): string {
   }
 
   return `#${pr.number}: ${pr.title} (by ${pr.user?.login}) - ${timeStr}`;
+}
+
+// Helper function to select device/simulator destination
+async function selectDestination(iosService: IOSService): Promise<string | null> {
+  const spinner = ora();
+
+  console.log(chalk.blue('\n🎯 Destination Selection\n'));
+  const { destinationType } = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'destinationType',
+      message: 'Where do you want to run the app?',
+      choices: [
+        { name: '📱 iOS Simulator', value: 'simulator' },
+        { name: '📲 Physical Device', value: 'device' },
+      ],
+    },
+  ]);
+
+  let destination: string;
+  if (destinationType === 'simulator') {
+    spinner.start('Fetching simulators...');
+    const simulators = await iosService.getSimulators();
+    spinner.stop();
+
+    const { selectedSimulator } = await inquirer.prompt([
+      {
+        type: 'list',
+        name: 'selectedSimulator',
+        message: 'Select a simulator:',
+        choices: simulators.map(sim => ({
+          name: `${sim.name} (${sim.runtime}) ${sim.state === 'Booted' ? '🟢' : '⚪'}`,
+          value: sim,
+        })),
+        pageSize: 15,
+      },
+    ]);
+
+    destination = `platform=iOS Simulator,name=${selectedSimulator.name}`;
+
+    // Boot simulator if not already running
+    if (selectedSimulator.state !== 'Booted') {
+      spinner.start('Booting simulator...');
+      await iosService.bootSimulator(selectedSimulator.udid);
+      spinner.stop();
+    }
+  } else {
+    spinner.start('Fetching devices...');
+    const devices = await iosService.getDevices();
+    spinner.stop();
+
+    if (devices.length === 0) {
+      console.log(chalk.red('No connected devices found.'));
+      return null;
+    }
+
+    const { selectedDevice } = await inquirer.prompt([
+      {
+        type: 'list',
+        name: 'selectedDevice',
+        message: 'Select a device:',
+        choices: devices.map(dev => ({
+          name: `${dev.name} (${dev.version})`,
+          value: dev,
+        })),
+      },
+    ]);
+
+    destination = `platform=iOS,id=${selectedDevice.udid}`;
+  }
+
+  return destination;
 }
 
 // Helper function to build and run a PR
@@ -99,88 +246,66 @@ async function buildAndRunPR(
     selectedScheme = result.scheme;
   }
 
-  // Select destination (simulator or device)
-  console.log(chalk.blue('\n🎯 Destination Selection\n'));
-  const { destinationType } = await inquirer.prompt([
-    {
-      type: 'list',
-      name: 'destinationType',
-      message: 'Where do you want to run the app?',
-      choices: [
-        { name: '📱 iOS Simulator', value: 'simulator' },
-        { name: '📲 Physical Device', value: 'device' },
-      ],
-    },
-  ]);
+  // Build and run loop with retry logic
+  let shouldContinue = true;
+  let destination: string | null = null;
 
-  let destination: string;
-  if (destinationType === 'simulator') {
-    spinner.start('Fetching simulators...');
-    const simulators = await iosService.getSimulators();
-    spinner.stop();
+  while (shouldContinue) {
+    // Select destination if not already selected or if reselecting
+    if (!destination) {
+      destination = await selectDestination(iosService);
+      if (!destination) {
+        return;
+      }
+    }
 
-    const { selectedSimulator } = await inquirer.prompt([
-      {
-        type: 'list',
-        name: 'selectedSimulator',
-        message: 'Select a simulator:',
-        choices: simulators.map(sim => ({
-          name: `${sim.name} (${sim.runtime}) ${sim.state === 'Booted' ? '🟢' : '⚪'}`,
-          value: sim,
-        })),
-        pageSize: 15,
-      },
-    ]);
+    // Build and run
+    console.log(chalk.blue('\n🔨 Building and Running\n'));
+    spinner.start('Building project...');
 
-    destination = `platform=iOS Simulator,name=${selectedSimulator.name}`;
+    try {
+      await iosService.buildAndRun(
+        selectedProject.path,
+        selectedScheme,
+        destination,
+        selectedProject.isWorkspace,
+        (output) => {
+          spinner.text = output;
+        }
+      );
 
-    // Boot simulator if not already running
-    if (selectedSimulator.state !== 'Booted') {
-      spinner.start('Booting simulator...');
-      await iosService.bootSimulator(selectedSimulator.udid);
       spinner.stop();
+      console.log(chalk.green('\n✓ App built and launched successfully!\n'));
+      shouldContinue = false;
+    } catch (error) {
+      spinner.stop();
+      console.log(chalk.red('\n❌ Build/Run failed:'), error instanceof Error ? error.message : error);
+
+      const { action } = await inquirer.prompt([
+        {
+          type: 'list',
+          name: 'action',
+          message: 'What would you like to do?',
+          choices: [
+            { name: '🔄 Try again with same device', value: 'retry' },
+            { name: '📱 Select a different device/simulator', value: 'reselect' },
+            { name: '❌ Exit', value: 'exit' },
+          ],
+        },
+      ]);
+
+      if (action === 'exit') {
+        shouldContinue = false;
+      } else if (action === 'retry') {
+        // Keep the same destination and retry
+        continue;
+      } else if (action === 'reselect') {
+        // Clear destination to force re-selection
+        destination = null;
+        continue;
+      }
     }
-  } else {
-    spinner.start('Fetching devices...');
-    const devices = await iosService.getDevices();
-    spinner.stop();
-
-    if (devices.length === 0) {
-      console.log(chalk.red('No connected devices found.'));
-      return;
-    }
-
-    const { selectedDevice } = await inquirer.prompt([
-      {
-        type: 'list',
-        name: 'selectedDevice',
-        message: 'Select a device:',
-        choices: devices.map(dev => ({
-          name: `${dev.name} (${dev.version})`,
-          value: dev,
-        })),
-      },
-    ]);
-
-    destination = `platform=iOS,id=${selectedDevice.udid}`;
   }
-
-  // Build and run
-  console.log(chalk.blue('\n🔨 Building and Running\n'));
-  spinner.start('Building project...');
-
-  await iosService.buildAndRun(
-    selectedProject.path,
-    selectedScheme,
-    destination,
-    selectedProject.isWorkspace,
-    (output) => {
-      spinner.text = output;
-    }
-  );
-
-  spinner.stop();
-  console.log(chalk.green('\n✓ App built and launched successfully!\n'));
 }
 
 program
@@ -196,17 +321,7 @@ program
       const spinner = ora();
 
       // Step 1: GitHub Authentication
-      console.log(chalk.blue('\n🔐 GitHub Authentication\n'));
-      const { githubToken } = await inquirer.prompt([
-        {
-          type: 'password',
-          name: 'githubToken',
-          message: 'Enter your GitHub Personal Access Token:',
-          validate: (input) => input.length > 0 || 'Token is required',
-        },
-      ]);
-
-      const githubService = new GitHubService(githubToken);
+      const githubService = await authenticateGitHub();
 
       // Step 2: Select Repository
       console.log(chalk.blue('\n📦 Repository Selection\n'));
@@ -277,17 +392,7 @@ program
       const spinner = ora();
 
       // GitHub Authentication
-      console.log(chalk.blue('\n🔐 GitHub Authentication\n'));
-      const { githubToken } = await inquirer.prompt([
-        {
-          type: 'password',
-          name: 'githubToken',
-          message: 'Enter your GitHub Personal Access Token:',
-          validate: (input) => input.length > 0 || 'Token is required',
-        },
-      ]);
-
-      const githubService = new GitHubService(githubToken);
+      const githubService = await authenticateGitHub();
 
       let selectedRepo: any;
 
@@ -447,17 +552,7 @@ program
       const spinner = ora();
 
       // GitHub Authentication
-      console.log(chalk.blue('\n🔐 GitHub Authentication\n'));
-      const { githubToken } = await inquirer.prompt([
-        {
-          type: 'password',
-          name: 'githubToken',
-          message: 'Enter your GitHub Personal Access Token:',
-          validate: (input) => input.length > 0 || 'Token is required',
-        },
-      ]);
-
-      const githubService = new GitHubService(githubToken);
+      const githubService = await authenticateGitHub();
 
       // Parse repo
       const [owner, repoName] = options.repo.split('/');
