@@ -1,0 +1,21 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Purchases collection - only your apps can write, Cloud Functions can read
+    match /purchases/{purchaseId} {
+      // Allow your iOS apps to create purchase records
+      // In production, you might want to verify the user is authenticated
+      allow create: if request.auth != null;
+
+      // Deny direct read/update/delete from clients for security
+      allow read, update, delete: if false;
+    }
+
+    // Default deny all other collections
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
